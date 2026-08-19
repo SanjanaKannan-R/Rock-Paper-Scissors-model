@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RPS Vision</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="app-container">
+    <header class="header"><div class="logo">RPS</div><div><h1>RPS VISION</h1><p>Gesture-powered rock, paper, scissors</p></div></header>
+    <div class="score-console" aria-label="Multiplayer score">
+      <div class="score-slot wins"><div class="score-label" id="scoreOneLabel">Player 1</div><div id="scoreWins" class="score-value">0</div></div>
+      <div class="score-slot losses"><div class="score-label" id="scoreTwoLabel">Player 2</div><div id="scoreLosses" class="score-value">0</div></div>
+      <div class="score-slot ties"><div class="score-label">Ties</div><div id="scoreTies" class="score-value">0</div></div>
+      <button id="scoreResetButton" class="score-reset" type="button">Reset scores</button>
+    </div>
+    <section class="main-card">
+      <div class="selector-row">
+        <div id="playModeGroup" class="selector-group"><button type="button" class="selector-btn active" data-mode="practice">Practice</button><button type="button" class="selector-btn" data-mode="multiplayer">2 Players</button></div>
+        <div id="inputModeGroup" class="selector-group"><button type="button" class="selector-btn active" data-input="upload">Upload</button><button type="button" class="selector-btn" data-input="webcam">Webcam</button></div>
+      </div>
+      <div id="multiplayerGuide" class="multiplayer-guide hidden"><strong>Two-player round</strong><span id="turnMessage">Player 1: show your gesture, then lock it in.</span></div>
+      <div id="uploadPanel"><div id="dropArea" class="drop-area" tabindex="0" role="button"><div class="upload-icon">+</div><h2>Upload an image</h2><p>Drop your image here or choose a file to classify.</p><input id="imageInput" type="file" accept="image/png,image/jpeg,image/jpg,image/webp" hidden><button id="browseButton" class="primary-button" type="button">Choose image</button><small>JPG, JPEG, PNG or WEBP · maximum 10 MB</small></div></div>
+      <div id="webcamPanel" class="webcam-panel hidden">
+        <div class="live-heading"><strong><span class="live-dot"></span><span id="scanStatus">Camera off</span></strong><span id="scanHint">Start your camera to begin</span></div>
+        <div class="viewfinder"><div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div><div class="scan-line"></div><video id="webcamVideo" autoplay playsinline muted></video><canvas id="webcamCanvas" class="hidden"></canvas><div id="webcamIdle" class="viewfinder-idle"><span>CAMERA</span><span>Camera is off.<br>Start it to scan a gesture.</span></div></div>
+        <div class="webcam-controls"><button id="startCameraButton" class="primary-button" type="button">Start camera</button><button id="switchCameraButton" class="secondary-button hidden" type="button">Flip camera</button><button id="stopCameraButton" class="secondary-button hidden" type="button">Stop camera</button></div>
+      </div>
+      <div id="previewSection" class="preview-section hidden"><h3>Ready to analyze</h3><div class="image-wrapper"><img id="imagePreview" alt="Selected gesture"></div><button id="predictButton" class="predict-button" type="button">Analyze image</button><button id="removeButton" class="secondary-button" type="button">Remove image</button></div>
+      <div id="loading" class="loading hidden"><div class="spinner"></div><h3>Reading gesture…</h3><p>The model is processing your image.</p></div>
+      <div id="result" class="result hidden"><p class="result-label">AI prediction</p><h2 id="prediction">—</h2><div class="confidence-container"><div class="confidence-header"><span>Confidence</span><strong id="confidence">0%</strong></div><div class="progress-bar"><div id="confidenceBar" class="progress"></div></div></div><div class="all-results"><h3>Model results</h3><div id="predictionList"></div></div></div>
+      <div id="roundResult" class="vs-panel hidden"><h3>Round result</h3><div class="vs-row"><div class="vs-side"><div class="vs-tag">Player 1</div><div id="playerOneMove" class="vs-name">Waiting</div></div><div class="vs-versus">VS</div><div class="vs-side"><div class="vs-tag">Player 2</div><div id="playerTwoMove" class="vs-name">Waiting</div></div></div><div id="roundOutcome" class="vs-outcome">—</div><button id="nextRoundButton" class="primary-button" type="button">Start next round</button></div>
+      <div id="error" class="error hidden" role="alert"><span>!</span><p id="errorMessage">Something went wrong.</p></div>
+    </section>
+    <footer><p>Built with Flask + TensorFlow + Keras</p></footer>
+  </main>
+  <div id="celebration" class="celebration hidden" aria-live="polite"><div class="celebration-card"><div class="celebration-confetti" aria-hidden="true"></div><p>ROUND WINNER</p><h2 id="celebrationText">Player 1 wins!</h2><span>Great gesture!</span></div></div>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
