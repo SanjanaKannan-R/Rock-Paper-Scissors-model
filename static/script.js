@@ -1,77 +1,422 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+(() => {
+  "use strict";
 
-:root {
-  --ink: #15233b;
-  --muted: #66758d;
-  --surface: #ffffff;
-  --surface-soft: #f6f9fe;
-  --line: #dce5f2;
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-  --primary-soft: #eaf2ff;
-  --teal: #0f9f9a;
-  --green: #14804a;
-  --red: #cf3d57;
-  --gold: #c78500;
-  --shadow: 0 16px 42px rgba(42, 68, 112, .10);
-  --font: 'Manrope', sans-serif;
-  --mono: 'DM Mono', monospace;
-}
+  // ---------- Config ----------
+  const PREDICT_URL = "/predict";
+  const CAPTURE_INTERVAL_MS = 500;   // how often we sample a frame while scanning
+  const MIN_CONFIDENCE = 60;         // % confidence a single frame needs to be accepted instantly
+  const REQUIRED_MATCHES = 3;        // require a stable gesture before capturing it
+  const COOLDOWN_MS = 1600;          // pause after a capture before scanning resumes
+  const MOVES = ["rock", "paper", "scissors"];
+  const EMOJI = { rock: "✊", paper: "✋", scissors: "✌️" };
 
-* { box-sizing: border-box; }
-body { min-height: 100vh; margin: 0; color: var(--ink); font-family: var(--font); background: linear-gradient(135deg, #f4f8ff 0%, #eef7ff 48%, #f9fbff 100%); }
-button { border: 0; border-radius: 10px; cursor: pointer; font: 700 14px var(--font); transition: transform .18s, box-shadow .18s, background .18s; }
-button:hover { transform: translateY(-1px); }
-button:focus-visible { outline: 3px solid rgba(37, 99, 235, .28); outline-offset: 3px; }
-.scanlines, .vignette, .background-circle { display: none; }
+  // ---------- DOM ----------
+  const el = (id) => document.getElementById(id);
 
-.app-container { width: min(960px, calc(100% - 32px)); margin: auto; padding: 54px 0 42px; }
-.header { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
-.logo { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 17px; color: #fff; font-size: 29px; background: linear-gradient(145deg, #3778f3, #1d4ed8); box-shadow: 0 10px 22px rgba(37, 99, 235, .27); }
-.header h1 { margin: 0 0 5px; font-size: clamp(24px, 4vw, 33px); letter-spacing: -.06em; font-weight: 800; }
-.header p { margin: 0; color: var(--muted); font-size: 14px; }
+  const playModeGroup = el("playModeGroup");
+  const multiplayerGuide = el("multiplayerGuide");
+  const turnMessage = el("turnMessage");
 
-.score-console { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 10px; margin-bottom: 18px; }
-.score-slot { min-width: 90px; padding: 13px 12px; text-align: center; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.75); }
-.score-label { color: var(--muted); font: 11px var(--mono); letter-spacing: .07em; text-transform: uppercase; }
-.score-value { margin-top: 4px; font-size: 22px; font-weight: 800; }
-.wins .score-value { color: var(--green); }.losses .score-value { color: var(--red); }.ties .score-value { color: var(--gold); }
-.score-reset { padding: 0 18px; color: var(--muted); border: 1px solid var(--line); background: #fff; }.score-reset:hover { color: var(--primary); border-color: #a8c5fa; }
+  const webcamPanel = el("webcamPanel");
+  const webcamVideo = el("webcamVideo");
+  const webcamCanvas = el("webcamCanvas");
+  const webcamIdle = el("webcamIdle");
+  const startCameraButton = el("startCameraButton");
+  const switchCameraButton = el("switchCameraButton");
+  const stopCameraButton = el("stopCameraButton");
+  const scanStatus = el("scanStatus");
+  const scanHint = el("scanHint");
+  const liveGuess = el("liveGuess");
+  const liveGuessLabel = el("liveGuessLabel");
+  const liveGuessConfidence = el("liveGuessConfidence");
 
-.main-card { padding: 26px; border: 1px solid rgba(220,229,242,.95); border-radius: 22px; background: rgba(255,255,255,.92); box-shadow: var(--shadow); }
-.selector-row { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 22px; justify-items: center; }
-.selector-row .selector-group { width: min(320px, 100%); }
-.selector-group { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
-.selector-btn { flex: 1; min-height: 42px; color: var(--muted); background: transparent; }.selector-btn.active { color: var(--primary-dark); background: #fff; box-shadow: 0 2px 7px rgba(28,55,93,.10); }
+  const roundResult = el("roundResult");
+  const vsTagOne = el("vsTagOne");
+  const vsTagTwo = el("vsTagTwo");
+  const playerOneMove = el("playerOneMove");
+  const playerTwoMove = el("playerTwoMove");
+  const playerOneEmoji = el("playerOneEmoji");
+  const playerTwoEmoji = el("playerTwoEmoji");
+  const roundOutcome = el("roundOutcome");
+  const nextRoundButton = el("nextRoundButton");
 
-.primary-button { padding: 12px 19px; color: #fff; background: var(--primary); box-shadow: 0 7px 15px rgba(37,99,235,.20); }.primary-button:hover { background: var(--primary-dark); box-shadow: 0 9px 19px rgba(37,99,235,.26); }
-.secondary-button { padding: 11px 17px; color: var(--ink); border: 1px solid var(--line); background: #fff; }.secondary-button:hover { border-color: #b5c9ec; background: var(--surface-soft); }
+  const errorBox = el("error");
+  const errorMessage = el("errorMessage");
 
-.live-heading { display: flex; justify-content: space-between; gap: 12px; max-width: 490px; margin: 0 auto 11px; color: var(--muted); font: 12px var(--mono); }.live-heading strong { color: var(--ink); }.live-dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--red); }.webcam-panel.live .live-dot { background: var(--teal); box-shadow: 0 0 0 4px rgba(15,159,154,.13); }
-.viewfinder { position: relative; width: min(100%, 490px); aspect-ratio: 1; margin: auto; overflow: hidden; border: 1px solid #bfcee4; border-radius: 18px; background: #eaf0f8; }.viewfinder video, .viewfinder canvas { display: block; width: 100%; height: 100%; object-fit: cover; }.webcam-panel.live video { transform: scaleX(-1); }
-.viewfinder-idle { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; color: var(--muted); text-align: center; font-size: 13px; }.viewfinder-idle span:first-child { font-size: 38px; }
-.corner { position: absolute; z-index: 2; width: 26px; height: 26px; border: 3px solid #fff; opacity: .88; }.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }.tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; }.bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; }.br { right: 12px; bottom: 12px; border-top: 0; border-left: 0; }
-.scan-line { position: absolute; z-index: 2; right: 0; left: 0; height: 2px; opacity: 0; background: rgba(255,255,255,.9); box-shadow: 0 0 10px #fff; }.webcam-panel.live .scan-line { opacity: 1; animation: scan 2.2s linear infinite; }@keyframes scan { 0%,100% { top: 8%; }50% { top: 92%; } }
-.webcam-controls { display: flex; justify-content: center; gap: 9px; margin-top: 17px; flex-wrap: wrap; }
+  const scoreOneLabel = el("scoreOneLabel");
+  const scoreTwoLabel = el("scoreTwoLabel");
+  const scoreWinsEl = el("scoreWins");
+  const scoreLossesEl = el("scoreLosses");
+  const scoreTiesEl = el("scoreTies");
+  const scoreResetButton = el("scoreResetButton");
 
-.vs-panel { margin-top: 24px; padding: 20px; border: 1px solid var(--line); border-radius: 15px; background: #fff; }.vs-panel h3 { margin: 0 0 16px; color: var(--muted); font: 12px var(--mono); text-transform: uppercase; }.vs-row { display: flex; align-items: center; justify-content: center; gap: 20px; }.vs-side { flex: 1; }.vs-emoji { display: block; font-size: 42px; }.vs-tag { color: var(--muted); font-size: 12px; }.vs-name { font-weight: 800; }.vs-versus { color: var(--primary); font-weight: 800; }.vs-outcome { margin-top: 14px; font-weight: 800; }.vs-outcome.win { color: var(--green); }.vs-outcome.lose { color: var(--red); }.vs-outcome.tie { color: var(--gold); }
-.error { display: flex; gap: 10px; align-items: center; margin-top: 18px; padding: 13px 15px; color: #9b2439; border: 1px solid #f5c7d0; border-radius: 12px; background: #fff2f4; font-size: 14px; }.error p { margin: 0; }
-footer { margin-top: 25px; color: var(--muted); text-align: center; font-size: 12px; }.hidden { display: none !important; }
-@media (max-width: 650px) { .app-container { width: min(100% - 22px, 960px); padding-top: 25px; }.main-card { padding: 16px; border-radius: 17px; }.score-console { grid-template-columns: repeat(3,1fr); }.score-reset { min-height: 38px; grid-column: 1/-1; }.selector-row { grid-template-columns: 1fr; gap: 8px; }.live-heading { flex-direction: column; }.header h1 { letter-spacing: -.05em; } }
-@media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  const celebration = el("celebration");
+  const celebrationText = el("celebrationText");
 
-.vs-outcome.player-one { color: var(--green); }
-.vs-outcome.player-two { color: var(--red); }
+  // ---------- State ----------
+  const state = {
+    playMode: "practice",      // 'practice' | 'multiplayer'
+    scores: { wins: 0, losses: 0, ties: 0 },
+    stream: null,
+    videoDevices: [],
+    currentDeviceIndex: 0,
+    liveTimer: null,
+    liveBusy: false,
+    livePaused: false,         // true during cooldown / while awaiting user action
+    candidateMove: null,
+    candidateMatches: 0,
+    turn: 1,                   // multiplayer: which player is currently being scanned
+    pendingMoves: {},          // { 1: 'rock', 2: 'paper' } for multiplayer
+  };
 
-.celebration { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 22px; background: rgba(21, 35, 59, .28); backdrop-filter: blur(3px); }
-.celebration-card { position: relative; width: min(100%, 390px); overflow: hidden; padding: 42px 25px; text-align: center; border: 1px solid #b9d1f6; border-radius: 23px; background: #fff; box-shadow: 0 24px 70px rgba(21, 35, 59, .24); animation: celebrate-pop .35s ease-out; }
-.celebration-card p { position: relative; margin: 0; color: var(--primary); font: 12px var(--mono); letter-spacing: .11em; }.celebration-card h2 { position: relative; margin: 10px 0 7px; color: var(--primary-dark); font-size: 30px; }.celebration-card span { position: relative; color: var(--muted); }
-.celebration-confetti::before { content: "*  *  *  *  *  *  *  *  *"; position: absolute; top: 13px; left: -5%; width: 110%; color: var(--teal); font-size: 28px; letter-spacing: 11px; animation: confetti-fall 1.1s ease-in infinite alternate; }
-@keyframes celebrate-pop { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }
-@keyframes confetti-fall { from { transform: translateY(-12px) rotate(-3deg); } to { transform: translateY(30px) rotate(3deg); } }
+  // ---------- Small helpers ----------
+  function show(node) { node.classList.remove("hidden"); }
+  function hide(node) { node.classList.add("hidden"); }
 
-/* Live auto-detection readout */
-.live-guess { position: absolute; bottom: 14px; left: 50%; z-index: 3; display: flex; align-items: baseline; gap: 8px; padding: 8px 16px; color: #fff; border-radius: 999px; background: rgba(21, 35, 59, .58); backdrop-filter: blur(2px); font: 600 14px var(--font); transform: translateX(-50%); white-space: nowrap; }
-.live-guess span#liveGuessConfidence { color: #bcd4ff; font: 12px var(--mono); }
-.live-guess.captured { background: rgba(15, 159, 154, .85); }
-.turn-badge { display: inline-block; margin-left: 8px; padding: 2px 9px; color: var(--primary-dark); border-radius: 999px; background: var(--primary-soft); font: 700 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; }
+  function resetCandidate() {
+    state.candidateMove = null;
+    state.candidateMatches = 0;
+  }
+
+  function showError(msg) {
+    errorMessage.textContent = msg;
+    show(errorBox);
+    window.clearTimeout(showError._t);
+    showError._t = window.setTimeout(() => hide(errorBox), 5000);
+  }
+
+  function normalizeMove(label) {
+    if (!label) return null;
+    const l = label.toLowerCase();
+    if (l.includes("rock")) return "rock";
+    if (l.includes("paper")) return "paper";
+    if (l.includes("scissor")) return "scissors";
+    return null;
+  }
+
+  function decideWinner(a, b) {
+    // returns 'a', 'b', or 'tie'
+    if (a === b) return "tie";
+    const beats = { rock: "scissors", paper: "rock", scissors: "paper" };
+    return beats[a] === b ? "a" : "b";
+  }
+
+  function persistScores() {
+    scoreWinsEl.textContent = state.scores.wins;
+    scoreLossesEl.textContent = state.scores.losses;
+    scoreTiesEl.textContent = state.scores.ties;
+  }
+
+  function resetRoundUI() {
+    hide(roundResult);
+    playerOneMove.textContent = "Waiting";
+    playerTwoMove.textContent = "Waiting";
+    playerOneEmoji.textContent = "✊";
+    playerTwoEmoji.textContent = "✊";
+    roundOutcome.textContent = "—";
+    roundOutcome.className = "vs-outcome";
+    state.pendingMoves = {};
+    state.turn = 1;
+  }
+
+  // ---------- Mode switching ----------
+  function applyModeLabels() {
+    if (state.playMode === "practice") {
+      scoreOneLabel.textContent = "You";
+      scoreTwoLabel.textContent = "Computer";
+      vsTagOne.textContent = "You";
+      vsTagTwo.textContent = "Computer";
+    } else {
+      scoreOneLabel.textContent = "Player 1";
+      scoreTwoLabel.textContent = "Player 2";
+      vsTagOne.textContent = "Player 1";
+      vsTagTwo.textContent = "Player 2";
+    }
+  }
+
+  function updateTurnMessage() {
+    if (state.playMode !== "multiplayer") return;
+    const who = state.turn === 1 ? "Player 1" : "Player 2";
+    turnMessage.innerHTML = `${who}: show your gesture to the camera.<span class="turn-badge">Turn ${state.turn}/2</span>`;
+  }
+
+  playModeGroup.addEventListener("click", (e) => {
+    const btn = e.target.closest(".selector-btn");
+    if (!btn) return;
+    playModeGroup.querySelectorAll(".selector-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.playMode = btn.dataset.mode;
+    if (state.playMode === "multiplayer") {
+      show(multiplayerGuide);
+    } else {
+      hide(multiplayerGuide);
+    }
+    applyModeLabels();
+    resetRoundUI();
+    hide(celebration);
+    if (state.stream) resumeLiveScanning();
+  });
+
+  // ---------- Prediction request ----------
+  async function sendPrediction(blobOrFile) {
+    const formData = new FormData();
+    const filename = blobOrFile.name || "capture.jpg";
+    formData.append("image", blobOrFile, filename);
+    const res = await fetch(PREDICT_URL, { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Prediction failed.");
+    }
+    return data;
+  }
+
+  // ---------- Practice mode (vs computer) ----------
+  function playPracticeRound(playerMove) {
+    const computerMove = MOVES[Math.floor(Math.random() * MOVES.length)];
+    const outcome = decideWinner(playerMove, computerMove);
+    showRoundResult(playerMove, computerMove, outcome);
+    if (outcome === "a") {
+      state.scores.wins += 1;
+      celebrate("You win!");
+    } else if (outcome === "b") {
+      state.scores.losses += 1;
+      celebrate("Computer wins!");
+    } else {
+      state.scores.ties += 1;
+    }
+    persistScores();
+  }
+
+  // ---------- Multiplayer mode ----------
+  function registerMultiplayerMove(turn, move) {
+    state.pendingMoves[turn] = move;
+    if (turn === 1) {
+      playerOneMove.textContent = capitalize(move);
+      playerOneEmoji.textContent = EMOJI[move];
+      show(roundResult);
+      state.turn = 2;
+      updateTurnMessage();
+    } else {
+      playerTwoMove.textContent = capitalize(move);
+      playerTwoEmoji.textContent = EMOJI[move];
+      const outcome = decideWinner(state.pendingMoves[1], move);
+      finishMultiplayerRound(outcome);
+    }
+  }
+
+  function finishMultiplayerRound(outcome) {
+    if (outcome === "a") {
+      state.scores.wins += 1;
+      roundOutcome.textContent = "Player 1 wins the round!";
+      roundOutcome.className = "vs-outcome player-one";
+      celebrate("Player 1 wins!");
+    } else if (outcome === "b") {
+      state.scores.losses += 1;
+      roundOutcome.textContent = "Player 2 wins the round!";
+      roundOutcome.className = "vs-outcome player-two";
+      celebrate("Player 2 wins!");
+    } else {
+      state.scores.ties += 1;
+      roundOutcome.textContent = "It's a tie!";
+      roundOutcome.className = "vs-outcome tie";
+    }
+    persistScores();
+  }
+
+  function showRoundResult(playerMove, otherMove, outcome) {
+    playerOneMove.textContent = capitalize(playerMove);
+    playerOneEmoji.textContent = EMOJI[playerMove];
+    playerTwoMove.textContent = capitalize(otherMove);
+    playerTwoEmoji.textContent = EMOJI[otherMove];
+    if (outcome === "a") {
+      roundOutcome.textContent = state.playMode === "practice" ? "You win!" : "Player 1 wins the round!";
+      roundOutcome.className = "vs-outcome player-one";
+    } else if (outcome === "b") {
+      roundOutcome.textContent = state.playMode === "practice" ? "Computer wins!" : "Player 2 wins the round!";
+      roundOutcome.className = "vs-outcome player-two";
+    } else {
+      roundOutcome.textContent = "It's a tie!";
+      roundOutcome.className = "vs-outcome tie";
+    }
+    show(roundResult);
+  }
+
+  function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  function celebrate(text) {
+    celebrationText.textContent = text;
+    show(celebration);
+    window.clearTimeout(celebrate._t);
+    celebrate._t = window.setTimeout(() => hide(celebration), 1800);
+  }
+
+  celebration.addEventListener("click", () => hide(celebration));
+
+  nextRoundButton.addEventListener("click", () => {
+    resetRoundUI();
+    updateTurnMessage();
+    hide(celebration);
+    if (state.stream) resumeLiveScanning();
+  });
+
+  scoreResetButton.addEventListener("click", () => {
+    state.scores = { wins: 0, losses: 0, ties: 0 };
+    persistScores();
+  });
+
+  // ---------- Webcam: camera lifecycle ----------
+  async function listVideoDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      state.videoDevices = devices.filter((d) => d.kind === "videoinput");
+      if (state.videoDevices.length > 1) show(switchCameraButton);
+      else hide(switchCameraButton);
+    } catch (_) {
+      /* enumeration can fail silently before permission is granted */
+    }
+  }
+
+  async function startCamera() {
+    try {
+      const constraints = { video: { facingMode: "user" }, audio: false };
+      if (state.videoDevices[state.currentDeviceIndex]) {
+        constraints.video = { deviceId: { exact: state.videoDevices[state.currentDeviceIndex].deviceId } };
+      }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      state.stream = stream;
+      webcamVideo.srcObject = stream;
+      await webcamVideo.play();
+      await listVideoDevices();
+
+      webcamPanel.classList.add("live");
+      hide(webcamIdle);
+      hide(startCameraButton);
+      show(stopCameraButton);
+      scanStatus.textContent = "Scanning…";
+      scanHint.textContent = "Show a gesture — it's read instantly";
+      resetRoundUI();
+      updateTurnMessage();
+      resumeLiveScanning();
+    } catch (err) {
+      showError("Couldn't access the camera. Check your browser permissions and try again.");
+    }
+  }
+
+  function stopCamera() {
+    pauseLiveScanning(true);
+    if (state.stream) {
+      state.stream.getTracks().forEach((t) => t.stop());
+      state.stream = null;
+    }
+    webcamVideo.srcObject = null;
+    webcamPanel.classList.remove("live");
+    show(webcamIdle);
+    show(startCameraButton);
+    hide(stopCameraButton);
+    scanStatus.textContent = "Camera off";
+    scanHint.textContent = "Start your camera to begin";
+    hide(liveGuess);
+  }
+
+  startCameraButton.addEventListener("click", startCamera);
+  stopCameraButton.addEventListener("click", stopCamera);
+  switchCameraButton.addEventListener("click", async () => {
+    if (state.videoDevices.length < 2) return;
+    state.currentDeviceIndex = (state.currentDeviceIndex + 1) % state.videoDevices.length;
+    if (state.stream) state.stream.getTracks().forEach((t) => t.stop());
+    await startCamera();
+  });
+
+  // ---------- Webcam: live hands-free detection loop ----------
+  // Every frame is classified independently and acted on immediately the
+  // moment it clears the confidence bar — there's no "hold it steady for
+  // N frames" lock-in step. The model is expected to read a single frame
+  // reliably on its own.
+  function resumeLiveScanning() {
+    state.livePaused = false;
+    resetCandidate();
+    hide(liveGuess);
+    liveGuess.classList.remove("captured");
+    if (state.liveTimer) return; // already running
+    state.liveTimer = window.setInterval(captureAndClassifyFrame, CAPTURE_INTERVAL_MS);
+  }
+
+  function pauseLiveScanning(fullStop) {
+    state.livePaused = true;
+    if (fullStop && state.liveTimer) {
+      window.clearInterval(state.liveTimer);
+      state.liveTimer = null;
+    }
+  }
+
+  function grabSquareFrameBlob() {
+    const video = webcamVideo;
+    if (!video.videoWidth || !video.videoHeight) return Promise.resolve(null);
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    webcamCanvas.width = 224;
+    webcamCanvas.height = 224;
+    const ctx = webcamCanvas.getContext("2d");
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, 224, 224);
+    return new Promise((resolve) => webcamCanvas.toBlob(resolve, "image/jpeg", 0.9));
+  }
+
+  async function captureAndClassifyFrame() {
+    if (state.livePaused || state.liveBusy || !state.stream) return;
+    state.liveBusy = true;
+    try {
+      const blob = await grabSquareFrameBlob();
+      if (!blob) return;
+      const data = await sendPrediction(new File([blob], "frame.jpg", { type: "image/jpeg" }));
+      const move = normalizeMove(data.prediction);
+
+      if (move && data.confidence >= MIN_CONFIDENCE) {
+        if (state.candidateMove === move) {
+          state.candidateMatches += 1;
+        } else {
+          state.candidateMove = move;
+          state.candidateMatches = 1;
+        }
+        show(liveGuess);
+        liveGuessLabel.textContent = `${EMOJI[move]} ${capitalize(move)}`;
+        liveGuessConfidence.textContent = `${Math.round(data.confidence)}% (${state.candidateMatches}/${REQUIRED_MATCHES})`;
+        if (state.candidateMatches >= REQUIRED_MATCHES) captureGesture(move);
+      } else {
+        resetCandidate();
+        hide(liveGuess);
+      }
+    } catch (err) {
+      // Network hiccups shouldn't spam the error banner during live scanning.
+      console.warn("Live prediction failed:", err.message);
+    } finally {
+      state.liveBusy = false;
+    }
+  }
+
+  // Acts on a single confidently-classified frame right away.
+  function captureGesture(move) {
+    pauseLiveScanning(false); // keep interval alive, just skip work, so resume is instant
+    resetCandidate();
+    liveGuess.classList.add("captured");
+    liveGuessLabel.textContent = `${EMOJI[move]} ${capitalize(move)} captured!`;
+    scanStatus.textContent = "Captured";
+
+    if (state.playMode === "practice") {
+      playPracticeRound(move);
+    } else {
+      registerMultiplayerMove(state.turn, move);
+    }
+
+    window.setTimeout(() => {
+      if (!state.stream) return;
+      scanStatus.textContent = "Scanning…";
+      resumeLiveScanning();
+    }, COOLDOWN_MS);
+  }
+
+  // ---------- Init ----------
+  applyModeLabels();
+  persistScores();
+  updateTurnMessage();
+})();
