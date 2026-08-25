@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, jsonify
 import tensorflow as tf
 import uuid
 import numpy as np
+from typing import Any
 img_to_array = tf.keras.utils.img_to_array
 load_img = tf.keras.utils.load_img
 class LegacyDepthwiseConv2D(tf.keras.layers.DepthwiseConv2D):
@@ -23,7 +24,7 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 print("Loading model...")
-model = None
+model: Any = None
 model_error = None
 try:
     with open(MODEL_PATH, "rb") as f:
@@ -168,7 +169,8 @@ def predict():
 
 
     file = request.files["image"]
-    if file.filename == "":
+    original_filename = file.filename or ""
+    if not original_filename:
 
         return jsonify({
             "success": False,
@@ -191,7 +193,7 @@ def predict():
         }), 500
 
     try:
-        extension = file.filename.rsplit(
+        extension = original_filename.rsplit(
             ".",
             1
         )[1].lower()
