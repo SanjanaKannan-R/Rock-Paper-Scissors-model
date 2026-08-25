@@ -5,7 +5,6 @@ RPS Vision is a Flask web application that identifies Rock, Paper, and Scissors 
 ## Features
 
 - Rock, Paper, and Scissors gesture prediction
-- Image upload support (`JPG`, `JPEG`, `PNG`, and `WEBP`)
 - Live webcam predictions
 - Automatic two-player turns using one camera
 - Automatic round winner calculation and celebration
